@@ -31,14 +31,6 @@ fn main() {
 type BlockID = u32;
 const BLOCK_SIZE: usize = 4096;
 
-/*struct Trace {
-    filepath: O
-}
-
-impl Trace{
-
-}*/
-
 struct MidPhase {
     data_map: MmapMut,
     journal_map: MmapMut,

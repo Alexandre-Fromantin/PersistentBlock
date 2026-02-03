@@ -3,6 +3,7 @@ use std::{
     collections::HashMap,
     fs::{File, OpenOptions},
     io,
+    ops::{Deref, DerefMut},
     path::PathBuf,
 };
 
@@ -238,6 +239,27 @@ struct ReadBlock<'a> {
     data: &'a mut [u8],
 }
 
+impl Deref for ReadBlock<'_> {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        self.data
+    }
+}
+
 struct WriteBlock<'a> {
     data: &'a mut [u8],
+}
+
+impl Deref for WriteBlock<'_> {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        self.data
+    }
+}
+impl DerefMut for WriteBlock<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.data
+    }
 }

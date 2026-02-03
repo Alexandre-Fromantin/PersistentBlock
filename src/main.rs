@@ -12,7 +12,8 @@ use memmap2::MmapMut;
 fn main() {}
 
 type BlockID = u32;
-const BLOCK_SIZE: usize = 4096;
+const BLOCK_SIZE_U64: u64 = 4096;
+const BLOCK_SIZE_USIZE: usize = BLOCK_SIZE_U64 as usize;
 
 struct FileMapped {
     file: File,
@@ -49,12 +50,13 @@ impl FileMapped {
 struct MidPhase {
     data: FileMapped,
     journal: FileMapped,
+    journal_capacity: u32,
     block_hashmap: HashMap<BlockID, BlockID>,
 }
 
 impl MidPhase {
     fn from_journal_phase(mut journal_phase: JournalPhase) -> io::Result<Self> {
-        let mut journal_map_idx = (journal_phase.next_journal_block_id as usize) * 4096;
+        let mut journal_map_idx = (journal_phase.next_journal_block_id as usize) * BLOCK_SIZE_USIZE;
         for (data_map_block_id, journal_map_block_id) in journal_phase.block_hashmap.iter() {
             LittleEndian::write_u32(
                 &mut journal_phase.journal.map[journal_map_idx..(journal_map_idx + 4)],
@@ -75,13 +77,14 @@ impl MidPhase {
         journal_phase.journal.map.flush()?;
 
         let length_used = journal_phase.block_hashmap.len() as u64
-            * (4096 + size_of::<u32>() * 2) as u64
+            * (BLOCK_SIZE_USIZE + size_of::<u32>() * 2) as u64
             + size_of::<u32>() as u64;
         journal_phase.journal.resize(length_used)?;
 
         Ok(Self {
             data: journal_phase.data,
             journal: journal_phase.journal,
+            journal_capacity: journal_phase.journal_capacity,
             block_hashmap: journal_phase.block_hashmap,
         })
     }
@@ -103,13 +106,13 @@ impl<'a> JournalPhase {
 
     pub fn from_mid_phase(mut mid_phase: MidPhase) -> io::Result<Self> {
         for (data_map_block_id, journal_map_block_id) in mid_phase.block_hashmap.iter() {
-            let block_idx_in_data_map = (*data_map_block_id as usize) * BLOCK_SIZE;
-            let block_idx_in_journal_map = (*journal_map_block_id as usize) * BLOCK_SIZE;
+            let block_idx_in_data_map = (*data_map_block_id as usize) * BLOCK_SIZE_USIZE;
+            let block_idx_in_journal_map = (*journal_map_block_id as usize) * BLOCK_SIZE_USIZE;
 
-            mid_phase.data.map[block_idx_in_data_map..(block_idx_in_data_map + BLOCK_SIZE)]
+            mid_phase.data.map[block_idx_in_data_map..(block_idx_in_data_map + BLOCK_SIZE_USIZE)]
                 .clone_from_slice(
                     &mid_phase.journal.map
-                        [block_idx_in_journal_map..(block_idx_in_journal_map + BLOCK_SIZE)],
+                        [block_idx_in_journal_map..(block_idx_in_journal_map + BLOCK_SIZE_USIZE)],
                 );
         }
 
@@ -119,6 +122,7 @@ impl<'a> JournalPhase {
         Ok(Self {
             data: mid_phase.data,
             journal: mid_phase.journal,
+            journal_capacity: mid_phase.journal_capacity,
             next_journal_block_id: 0,
             block_hashmap: mid_phase.block_hashmap,
         })
@@ -128,20 +132,20 @@ impl<'a> JournalPhase {
         let journal_block_id_opt = self.block_hashmap.get(&block_id);
         match journal_block_id_opt {
             Some(journal_block_id) => {
-                let idx_in_journal_map = (*journal_block_id as usize) * BLOCK_SIZE;
+                let idx_in_journal_map = (*journal_block_id as usize) * BLOCK_SIZE_USIZE;
                 ReadBlock {
                     data_map_block_id: block_id,
                     writable: true,
                     data: &mut self.journal.map
-                        [idx_in_journal_map..(idx_in_journal_map + BLOCK_SIZE)],
+                        [idx_in_journal_map..(idx_in_journal_map + BLOCK_SIZE_USIZE)],
                 }
             }
             None => {
-                let idx_in_data_map = (block_id as usize) * BLOCK_SIZE;
+                let idx_in_data_map = (block_id as usize) * BLOCK_SIZE_USIZE;
                 ReadBlock {
                     data_map_block_id: block_id,
                     writable: false,
-                    data: &mut self.data.map[idx_in_data_map..(idx_in_data_map + BLOCK_SIZE)],
+                    data: &mut self.data.map[idx_in_data_map..(idx_in_data_map + BLOCK_SIZE_USIZE)],
                 }
             }
         }
@@ -151,32 +155,33 @@ impl<'a> JournalPhase {
         let journal_block_id_opt = self.block_hashmap.get(&block_id);
         match journal_block_id_opt {
             Some(journal_block_id) => {
-                let idx_in_journal_map = (*journal_block_id as usize) * BLOCK_SIZE;
+                let idx_in_journal_map = (*journal_block_id as usize) * BLOCK_SIZE_USIZE;
                 Ok(WriteBlock {
                     data: &mut self.journal.map
-                        [idx_in_journal_map..(idx_in_journal_map + BLOCK_SIZE)],
+                        [idx_in_journal_map..(idx_in_journal_map + BLOCK_SIZE_USIZE)],
                 })
             }
             None => {
                 if self.journal_capacity <= self.block_hashmap.len() as u32 {
                     self.journal_capacity =
                         self.journal_capacity + min(self.journal_capacity / 4, 1); //capacity +25%
-                    self.journal.resize(self.journal_capacity as u64 * 4096)?;
+                    self.journal
+                        .resize(self.journal_capacity as u64 * BLOCK_SIZE_U64)?;
                 }
                 self.block_hashmap
                     .insert(block_id, self.next_journal_block_id);
 
-                let idx_in_data_map = (block_id as usize) * BLOCK_SIZE;
-                let idx_in_journal_map = (self.next_journal_block_id as usize) * BLOCK_SIZE;
-                self.journal.map[idx_in_journal_map..(idx_in_journal_map + BLOCK_SIZE)]
+                let idx_in_data_map = (block_id as usize) * BLOCK_SIZE_USIZE;
+                let idx_in_journal_map = (self.next_journal_block_id as usize) * BLOCK_SIZE_USIZE;
+                self.journal.map[idx_in_journal_map..(idx_in_journal_map + BLOCK_SIZE_USIZE)]
                     .copy_from_slice(
-                        &self.data.map[idx_in_data_map..(idx_in_data_map + BLOCK_SIZE)],
+                        &self.data.map[idx_in_data_map..(idx_in_data_map + BLOCK_SIZE_USIZE)],
                     );
 
                 self.next_journal_block_id += 1;
                 Ok(WriteBlock {
                     data: &mut self.journal.map
-                        [idx_in_journal_map..(idx_in_journal_map + BLOCK_SIZE)],
+                        [idx_in_journal_map..(idx_in_journal_map + BLOCK_SIZE_USIZE)],
                 })
             }
         }
@@ -193,22 +198,36 @@ impl<'a> JournalPhase {
         } else {
             if self.journal_capacity <= self.block_hashmap.len() as u32 {
                 self.journal_capacity = self.journal_capacity + min(self.journal_capacity / 4, 1); //capacity +25%
-                self.journal.resize(self.journal_capacity as u64 * 4096)?;
+                self.journal
+                    .resize(self.journal_capacity as u64 * BLOCK_SIZE_U64)?;
             }
 
             self.block_hashmap
                 .insert(read_block.data_map_block_id, self.next_journal_block_id);
 
-            let idx_in_data_map = (read_block.data_map_block_id as usize) * BLOCK_SIZE;
-            let idx_in_journal_map = (self.next_journal_block_id as usize) * BLOCK_SIZE;
-            self.journal.map[idx_in_journal_map..(idx_in_journal_map + BLOCK_SIZE)]
-                .copy_from_slice(&self.data.map[idx_in_data_map..(idx_in_data_map + BLOCK_SIZE)]);
+            let idx_in_data_map = (read_block.data_map_block_id as usize) * BLOCK_SIZE_USIZE;
+            let idx_in_journal_map = (self.next_journal_block_id as usize) * BLOCK_SIZE_USIZE;
+            self.journal.map[idx_in_journal_map..(idx_in_journal_map + BLOCK_SIZE_USIZE)]
+                .copy_from_slice(
+                    &self.data.map[idx_in_data_map..(idx_in_data_map + BLOCK_SIZE_USIZE)],
+                );
 
             self.next_journal_block_id += 1;
             Ok(WriteBlock {
-                data: &mut self.journal.map[idx_in_journal_map..(idx_in_journal_map + BLOCK_SIZE)],
+                data: &mut self.journal.map
+                    [idx_in_journal_map..(idx_in_journal_map + BLOCK_SIZE_USIZE)],
             })
         }
+    }
+
+    ///Does not work for size reduction
+    /// TODO: manage size reduction
+    pub fn resize(&mut self, new_number_of_block: u32) -> io::Result<()> {
+        let new_size = new_number_of_block as u64 * BLOCK_SIZE_U64;
+        if new_size < self.data.file_len {
+            todo!("size reduction of data file, not implemented")
+        }
+        self.data.resize(new_size)
     }
 }
 

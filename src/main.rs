@@ -26,6 +26,7 @@ impl FileMapped {
             .read(true)
             .write(true)
             .create(true)
+            .truncate(false)
             .open(path)?;
         let map = unsafe { MmapMut::map_mut(&file) }?;
 

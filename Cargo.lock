@@ -3,14 +3,6 @@
 version = 4
 
 [[package]]
-name = "PersistentBlock"
-version = "0.1.0"
-dependencies = [
- "byteorder",
- "memmap2",
-]
-
-[[package]]
 name = "byteorder"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -29,4 +21,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "744133e4a0e0a658e1374cf3bf8e415c4052a15a111acd372764c55b4177d490"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "persistent_block"
+version = "0.1.0"
+dependencies = [
+ "byteorder",
+ "memmap2",
 ]

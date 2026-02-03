@@ -10,8 +10,6 @@ use std::{
 use byteorder::{ByteOrder, LittleEndian};
 use memmap2::MmapMut;
 
-fn main() {}
-
 type BlockID = u32;
 const BLOCK_SIZE_U64: u64 = 4096;
 const BLOCK_SIZE_USIZE: usize = BLOCK_SIZE_U64 as usize;
@@ -22,7 +20,7 @@ struct FileMapped {
     file_len: u64,
 }
 impl FileMapped {
-    pub fn new(path: PathBuf) -> io::Result<Self> {
+    fn new(path: PathBuf) -> io::Result<Self> {
         let file = OpenOptions::new()
             .read(true)
             .write(true)
@@ -40,7 +38,7 @@ impl FileMapped {
         })
     }
 
-    pub fn resize(&mut self, new_size: u64) -> io::Result<()> {
+    fn resize(&mut self, new_size: u64) -> io::Result<()> {
         self.file.set_len(new_size)?;
 
         self.map = unsafe { MmapMut::map_mut(&self.file) }?;
@@ -57,7 +55,7 @@ struct MidPhase {
 }
 
 impl MidPhase {
-    fn from_journal_phase(mut journal_phase: JournalPhase) -> io::Result<Self> {
+    pub fn from_journal_phase(mut journal_phase: JournalPhase) -> io::Result<Self> {
         let mut journal_map_idx = (journal_phase.next_journal_block_id as usize) * BLOCK_SIZE_USIZE;
         for (data_map_block_id, journal_map_block_id) in journal_phase.block_hashmap.iter() {
             LittleEndian::write_u32(
@@ -71,7 +69,7 @@ impl MidPhase {
             journal_map_idx += size_of::<u32>() * 2;
         }
 
-        ///write nb block
+        //write nb block
         LittleEndian::write_u32(
             &mut journal_phase.journal.map[journal_map_idx..(journal_map_idx + 4)],
             journal_phase.block_hashmap.len() as u32,
@@ -233,7 +231,7 @@ impl<'a> JournalPhase {
     }
 }
 
-struct ReadBlock<'a> {
+pub struct ReadBlock<'a> {
     data_map_block_id: BlockID,
     writable: bool,
     data: &'a mut [u8],
@@ -247,7 +245,7 @@ impl Deref for ReadBlock<'_> {
     }
 }
 
-struct WriteBlock<'a> {
+pub struct WriteBlock<'a> {
     data: &'a mut [u8],
 }
 

@@ -47,7 +47,7 @@ impl FileMapped {
     }
 }
 
-struct MidPhase {
+pub struct MidPhase {
     data: FileMapped,
     journal: FileMapped,
     journal_capacity: u32,
@@ -90,7 +90,7 @@ impl MidPhase {
     }
 }
 
-struct JournalPhase {
+pub struct JournalPhase {
     data: FileMapped,
     journal: FileMapped,
     journal_capacity: u32,

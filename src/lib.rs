@@ -10,9 +10,9 @@ use std::{
 use byteorder::{ByteOrder, LittleEndian};
 use memmap2::MmapMut;
 
-type BlockID = u32;
-const BLOCK_SIZE_U64: u64 = 4096;
-const BLOCK_SIZE_USIZE: usize = BLOCK_SIZE_U64 as usize;
+pub type BlockID = u32;
+pub const BLOCK_SIZE_U64: u64 = 4096;
+pub const BLOCK_SIZE_USIZE: usize = BLOCK_SIZE_U64 as usize;
 
 struct FileMapped {
     file: File,

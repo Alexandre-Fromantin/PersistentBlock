@@ -48,14 +48,14 @@ impl FileMapped {
     }
 }
 
-pub struct MidPhase {
+pub struct CommitPhase {
     data: FileMapped,
     journal: FileMapped,
     journal_capacity: u32,
     block_hashmap: AHashMap<BlockID, BlockID>,
 }
 
-impl MidPhase {
+impl CommitPhase {
     pub fn from_journal_phase(mut journal_phase: JournalPhase) -> io::Result<Self> {
         let mut journal_map_idx = (journal_phase.next_journal_block_id as usize) * BLOCK_SIZE_USIZE;
         for (data_map_block_id, journal_map_block_id) in journal_phase.block_hashmap.iter() {
@@ -105,27 +105,28 @@ impl JournalPhase {
     //on write -> if already in hash map -> write on journal block
     //           OR -> copy data block in journal block and write in journal block
 
-    pub fn from_mid_phase(mut mid_phase: MidPhase) -> io::Result<Self> {
-        for (data_map_block_id, journal_map_block_id) in mid_phase.block_hashmap.iter() {
+    pub fn from_commit_phase(mut commit_phase: CommitPhase) -> io::Result<Self> {
+        for (data_map_block_id, journal_map_block_id) in commit_phase.block_hashmap.iter() {
             let block_idx_in_data_map = (*data_map_block_id as usize) * BLOCK_SIZE_USIZE;
             let block_idx_in_journal_map = (*journal_map_block_id as usize) * BLOCK_SIZE_USIZE;
 
-            mid_phase.data.map[block_idx_in_data_map..(block_idx_in_data_map + BLOCK_SIZE_USIZE)]
+            commit_phase.data.map
+                [block_idx_in_data_map..(block_idx_in_data_map + BLOCK_SIZE_USIZE)]
                 .clone_from_slice(
-                    &mid_phase.journal.map
+                    &commit_phase.journal.map
                         [block_idx_in_journal_map..(block_idx_in_journal_map + BLOCK_SIZE_USIZE)],
                 );
         }
 
-        mid_phase.data.map.flush()?;
+        commit_phase.data.map.flush()?;
 
-        mid_phase.block_hashmap.clear();
+        commit_phase.block_hashmap.clear();
         Ok(Self {
-            data: mid_phase.data,
-            journal: mid_phase.journal,
-            journal_capacity: mid_phase.journal_capacity,
+            data: commit_phase.data,
+            journal: commit_phase.journal,
+            journal_capacity: commit_phase.journal_capacity,
             next_journal_block_id: 0,
-            block_hashmap: mid_phase.block_hashmap,
+            block_hashmap: commit_phase.block_hashmap,
         })
     }
 

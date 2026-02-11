@@ -1,6 +1,5 @@
 use std::{
     cmp::min,
-    collections::HashMap,
     fs::{File, OpenOptions},
     io,
     ops::{Deref, DerefMut},
@@ -8,6 +7,7 @@ use std::{
     ptr::NonNull,
 };
 
+use ahash::AHashMap;
 use byteorder::{ByteOrder, LittleEndian};
 use memmap2::MmapMut;
 
@@ -52,7 +52,7 @@ pub struct MidPhase {
     data: FileMapped,
     journal: FileMapped,
     journal_capacity: u32,
-    block_hashmap: HashMap<BlockID, BlockID>,
+    block_hashmap: AHashMap<BlockID, BlockID>,
 }
 
 impl MidPhase {
@@ -96,7 +96,7 @@ pub struct JournalPhase {
     journal: FileMapped,
     journal_capacity: u32,
     next_journal_block_id: BlockID,
-    block_hashmap: HashMap<BlockID, BlockID>,
+    block_hashmap: AHashMap<BlockID, BlockID>,
 }
 impl JournalPhase {
     //on read -> if already in hash map -> read on journal block

@@ -5,6 +5,7 @@ use std::{
     io,
     ops::{Deref, DerefMut},
     path::PathBuf,
+    ptr::NonNull,
 };
 
 use byteorder::{ByteOrder, LittleEndian};
@@ -97,7 +98,7 @@ pub struct JournalPhase {
     next_journal_block_id: BlockID,
     block_hashmap: HashMap<BlockID, BlockID>,
 }
-impl<'a> JournalPhase {
+impl JournalPhase {
     //on read -> if already in hash map -> read on journal block
     //           OR -> read on data map
 
@@ -128,7 +129,7 @@ impl<'a> JournalPhase {
         })
     }
 
-    pub fn load_read_block(&'a mut self, block_id: BlockID) -> ReadBlock<'a> {
+    pub fn load_read_block(&mut self, block_id: BlockID) -> ReadBlock {
         let journal_block_id_opt = self.block_hashmap.get(&block_id);
         match journal_block_id_opt {
             Some(journal_block_id) => {
@@ -136,8 +137,12 @@ impl<'a> JournalPhase {
                 ReadBlock {
                     data_map_block_id: block_id,
                     writable: true,
-                    data: &mut self.journal.map
-                        [idx_in_journal_map..(idx_in_journal_map + BLOCK_SIZE_USIZE)],
+                    data: unsafe {
+                        NonNull::new_unchecked(
+                            &mut self.journal.map
+                                [idx_in_journal_map..(idx_in_journal_map + BLOCK_SIZE_USIZE)],
+                        )
+                    },
                 }
             }
             None => {
@@ -145,20 +150,29 @@ impl<'a> JournalPhase {
                 ReadBlock {
                     data_map_block_id: block_id,
                     writable: false,
-                    data: &mut self.data.map[idx_in_data_map..(idx_in_data_map + BLOCK_SIZE_USIZE)],
+                    data: unsafe {
+                        NonNull::new_unchecked(
+                            &mut self.data.map
+                                [idx_in_data_map..(idx_in_data_map + BLOCK_SIZE_USIZE)],
+                        )
+                    },
                 }
             }
         }
     }
 
-    pub fn load_write_block(&'a mut self, block_id: BlockID) -> io::Result<WriteBlock<'a>> {
+    pub fn load_write_block(&mut self, block_id: BlockID) -> io::Result<WriteBlock> {
         let journal_block_id_opt = self.block_hashmap.get(&block_id);
         match journal_block_id_opt {
             Some(journal_block_id) => {
                 let idx_in_journal_map = (*journal_block_id as usize) * BLOCK_SIZE_USIZE;
                 Ok(WriteBlock {
-                    data: &mut self.journal.map
-                        [idx_in_journal_map..(idx_in_journal_map + BLOCK_SIZE_USIZE)],
+                    data: unsafe {
+                        NonNull::new_unchecked(
+                            &mut self.journal.map
+                                [idx_in_journal_map..(idx_in_journal_map + BLOCK_SIZE_USIZE)],
+                        )
+                    },
                 })
             }
             None => {
@@ -180,17 +194,21 @@ impl<'a> JournalPhase {
 
                 self.next_journal_block_id += 1;
                 Ok(WriteBlock {
-                    data: &mut self.journal.map
-                        [idx_in_journal_map..(idx_in_journal_map + BLOCK_SIZE_USIZE)],
+                    data: unsafe {
+                        NonNull::new_unchecked(
+                            &mut self.journal.map
+                                [idx_in_journal_map..(idx_in_journal_map + BLOCK_SIZE_USIZE)],
+                        )
+                    },
                 })
             }
         }
     }
 
     pub fn load_write_block_from_read_block(
-        &'a mut self,
-        read_block: ReadBlock<'a>,
-    ) -> io::Result<WriteBlock<'a>> {
+        &mut self,
+        read_block: &mut ReadBlock,
+    ) -> io::Result<WriteBlock> {
         if read_block.writable {
             Ok(WriteBlock {
                 data: read_block.data,
@@ -212,10 +230,18 @@ impl<'a> JournalPhase {
                     &self.data.map[idx_in_data_map..(idx_in_data_map + BLOCK_SIZE_USIZE)],
                 );
 
+            let journal_slice = unsafe {
+                NonNull::new_unchecked(
+                    &mut self.journal.map
+                        [idx_in_journal_map..(idx_in_journal_map + BLOCK_SIZE_USIZE)],
+                )
+            };
+            read_block.data = journal_slice;
+            read_block.writable = true;
+
             self.next_journal_block_id += 1;
             Ok(WriteBlock {
-                data: &mut self.journal.map
-                    [idx_in_journal_map..(idx_in_journal_map + BLOCK_SIZE_USIZE)],
+                data: journal_slice,
             })
         }
     }
@@ -231,33 +257,33 @@ impl<'a> JournalPhase {
     }
 }
 
-pub struct ReadBlock<'a> {
+pub struct ReadBlock {
     data_map_block_id: BlockID,
     writable: bool,
-    data: &'a mut [u8],
+    data: NonNull<[u8]>,
 }
 
-impl Deref for ReadBlock<'_> {
+impl Deref for ReadBlock {
     type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
-        self.data
+        unsafe { self.data.as_ref() }
     }
 }
 
-pub struct WriteBlock<'a> {
-    data: &'a mut [u8],
+pub struct WriteBlock {
+    data: NonNull<[u8]>,
 }
 
-impl Deref for WriteBlock<'_> {
+impl Deref for WriteBlock {
     type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
-        self.data
+        unsafe { self.data.as_ref() }
     }
 }
-impl DerefMut for WriteBlock<'_> {
+impl DerefMut for WriteBlock {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.data
+        unsafe { self.data.as_mut() }
     }
 }
